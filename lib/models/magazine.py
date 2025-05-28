@@ -102,14 +102,17 @@ class Magazine:
             logger.error(f"Error finding magazines by category '{category}': {str(e)}")
             raise
 
-    def articles(self, limit: Optional[int] = None) -> List["Article"]:
-        """Get magazine's articles with optional pagination"""
+    def articles(self) -> List['Article']:
+        """Optimized with ordering by publication date"""
         from lib.models.article import Article
         try:
             with get_connection() as conn:
-                query = "SELECT * FROM articles WHERE magazine_id = ?" + (" LIMIT ?" if limit else "")
-                params = (self.id, limit) if limit else (self.id,)
-                rows = conn.execute(query, params).fetchall()
+                rows = conn.execute(
+                    """SELECT * FROM articles 
+                    WHERE magazine_id = ? 
+                    ORDER BY published_at DESC""",
+                    (self.id,)
+                ).fetchall()
                 return [Article._row_to_article(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching articles for magazine {self.id}: {str(e)}")
@@ -188,3 +191,37 @@ class Magazine:
             data['article_count'] = len(self.articles())
             data['contributor_count'] = len(self.contributors())
         return data
+
+    def article_titles(self) -> List[str]:
+        """Returns list of all article titles in this magazine"""
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT title FROM articles WHERE magazine_id = ?",
+                    (self.id,)
+                ).fetchall()
+                return [row['title'] for row in rows]
+        except Exception as e:
+            logger.error(f"Error fetching article titles for magazine {self.id}: {str(e)}")
+            raise
+
+    def contributing_authors(self, min_articles: int = 2) -> List['Author']:
+        """Returns authors with at least N articles in this magazine"""
+        from lib.models.author import Author
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """SELECT a.* FROM authors a
+                    JOIN (
+                        SELECT author_id, COUNT(*) as article_count
+                        FROM articles
+                        WHERE magazine_id = ?
+                        GROUP BY author_id
+                        HAVING article_count >= ?
+                    ) ac ON a.id = ac.author_id""",
+                    (self.id, min_articles)
+                ).fetchall()
+                return [Author._row_to_author(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error fetching contributing authors for magazine {self.id}: {str(e)}")
+            raise
