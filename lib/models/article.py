@@ -36,43 +36,42 @@ class Article:
         if not isinstance(self.magazine_id, int) or self.magazine_id <= 0:
             raise ValueError("Magazine ID must be a positive integer")
 
-    def save(self) -> bool:
-        """Persist article to database, returns success status"""
+    def save(self, conn=None) -> bool:
+        """Save with optional existing connection for transactions"""
+        should_close = False
+        if conn is None:
+            conn = get_connection()
+            should_close = True
+
         try:
-            with get_connection() as conn:
-                if self.id is None:
-                    return self._create_article(conn)
-                return self._update_article(conn)
+            if self.id is None:
+                cursor = conn.execute(
+                    """INSERT INTO articles 
+                    (title, content, author_id, magazine_id) 
+                    VALUES (?, ?, ?, ?) 
+                    RETURNING id, published_at""",
+                    (self.title, self.content, self.author_id, self.magazine_id)
+                )
+                result = cursor.fetchone()
+                self.id = result['id']
+                self.published_at = result['published_at']
+                logger.info(f"Created new article ID {self.id}")
+            else:
+                conn.execute(
+                    """UPDATE articles SET 
+                    title = ?, content = ?, 
+                    author_id = ?, magazine_id = ? 
+                    WHERE id = ?""",
+                    (self.title, self.content, self.author_id, self.magazine_id, self.id)
+                )
+                logger.info(f"Updated article ID {self.id}")
+            return True
         except Exception as e:
             logger.error(f"Failed to save article {self.id}: {str(e)}")
             raise
-
-    def _create_article(self, conn) -> bool:
-        """Handle new article creation"""
-        cursor = conn.execute(
-            """INSERT INTO articles 
-            (title, content, author_id, magazine_id) 
-            VALUES (?, ?, ?, ?) 
-            RETURNING id, published_at""",
-            (self.title, self.content, self.author_id, self.magazine_id)
-        )
-        result = cursor.fetchone()
-        self.id = result['id']
-        self.published_at = result['published_at']
-        logger.info(f"Created new article ID {self.id}")
-        return True
-
-    def _update_article(self, conn) -> bool:
-        """Handle existing article updates"""
-        conn.execute(
-            """UPDATE articles SET 
-            title = ?, content = ?, 
-            author_id = ?, magazine_id = ? 
-            WHERE id = ?""",
-            (self.title, self.content, self.author_id, self.magazine_id, self.id)
-        )
-        logger.info(f"Updated article ID {self.id}")
-        return True
+        finally:
+            if should_close:
+                conn.close()
 
     @classmethod
     def find_by_id(cls, article_id: int) -> Optional['Article']:

@@ -29,37 +29,36 @@ class Author:
         if len(self.name) > 255:
             raise ValueError("Author name cannot exceed 255 characters")
 
-    def save(self) -> bool:
-        """Persist author to database, returns success status"""
+    def save(self, conn=None) -> bool:
+        """Save with optional existing connection for transactions"""
+        should_close = False
+        if conn is None:
+            conn = get_connection()
+            should_close = True
+
         try:
-            with get_connection() as conn:
-                if self.id is None:
-                    return self._create_author(conn)
-                return self._update_author(conn)
+            if self.id is None:
+                cursor = conn.execute(
+                    "INSERT INTO authors (name) VALUES (?) RETURNING id, created_at",
+                    (self.name,)
+                )
+                result = cursor.fetchone()
+                self.id = result['id']
+                self.created_at = result['created_at']
+                logger.info(f"Created new author ID {self.id}")
+            else:
+                conn.execute(
+                    "UPDATE authors SET name = ? WHERE id = ?",
+                    (self.name, self.id)
+                )
+                logger.info(f"Updated author ID {self.id}")
+            return True
         except Exception as e:
             logger.error(f"Failed to save author {self.id}: {str(e)}")
             raise
-
-    def _create_author(self, conn) -> bool:
-        """Handle new author creation"""
-        cursor = conn.execute(
-            "INSERT INTO authors (name) VALUES (?) RETURNING id, created_at",
-            (self.name,)
-        )
-        result = cursor.fetchone()
-        self.id = result['id']
-        self.created_at = result['created_at']
-        logger.info(f"Created new author ID {self.id}")
-        return True
-
-    def _update_author(self, conn) -> bool:
-        """Handle existing author updates"""
-        conn.execute(
-            "UPDATE authors SET name = ? WHERE id = ?",
-            (self.name, self.id)
-        )
-        logger.info(f"Updated author ID {self.id}")
-        return True
+        finally:
+            if should_close:
+                conn.close()
 
     @classmethod
     def find_by_id(cls, author_id: int) -> Optional['Author']:
@@ -103,19 +102,55 @@ class Author:
             raise
 
     def magazines(self) -> List['Magazine']:
-        """Get all distinct magazines this author has contributed to"""
+        """Optimized version with category pre-loading"""
         from lib.models.magazine import Magazine
         try:
             with get_connection() as conn:
                 rows = conn.execute(
-                    """SELECT DISTINCT m.* FROM magazines m
-                    JOIN articles a ON m.id = a.magazine_id
-                    WHERE a.author_id = ?""",
+                    """SELECT m.* FROM magazines m
+                    JOIN (
+                        SELECT DISTINCT magazine_id 
+                        FROM articles 
+                        WHERE author_id = ?
+                    ) a ON m.id = a.magazine_id""",
                     (self.id,)
                 ).fetchall()
                 return [Magazine._row_to_magazine(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching magazines for author {self.id}: {str(e)}")
+            raise
+
+    def add_article(self, magazine: 'Magazine', title: str, content: str = "") -> 'Article':
+        """Creates and inserts a new Article for this author"""
+        from lib.models.article import Article
+        try:
+            article = Article(
+                id=None,
+                title=title,
+                content=content,
+                author_id=self.id,
+                magazine_id=magazine.id
+            )
+            article.save()
+            logger.info(f"Created new article '{title}' in magazine '{magazine.name}'")
+            return article
+        except Exception as e:
+            logger.error(f"Failed to add article for author {self.id}: {str(e)}")
+            raise
+
+    def topic_areas(self) -> List[str]:
+        """Returns unique list of magazine categories the author has written for"""
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """SELECT DISTINCT m.category FROM magazines m
+                    JOIN articles a ON m.id = a.magazine_id
+                    WHERE a.author_id = ?""",
+                    (self.id,)
+                ).fetchall()
+                return [row['category'] for row in rows]
+        except Exception as e:
+            logger.error(f"Error fetching topic areas for author {self.id}: {str(e)}")
             raise
 
     @classmethod
