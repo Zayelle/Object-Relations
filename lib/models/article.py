@@ -183,3 +183,24 @@ class Article:
             data['author'] = self.author.to_dict() if self.author else None
             data['magazine'] = self.magazine.to_dict() if self.magazine else None
         return data
+
+    @classmethod
+    def find_most_prolific_author(cls) -> Optional['Author']:
+        """Find the author who has written the most articles"""
+        from lib.models.author import Author
+        try:
+            with get_connection() as conn:
+                row = conn.execute(
+                    """SELECT a.* FROM authors a
+                    JOIN (
+                        SELECT author_id, COUNT(*) as article_count
+                        FROM articles
+                        GROUP BY author_id
+                        ORDER BY article_count DESC
+                        LIMIT 1
+                    ) ac ON a.id = ac.author_id"""
+                ).fetchone()
+                return Author._row_to_author(row) if row else None
+        except Exception as e:
+            logger.error(f"Error finding most prolific author: {str(e)}")
+            raise

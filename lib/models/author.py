@@ -88,21 +88,22 @@ class Author:
             logger.error(f"Error finding authors by name '{name}': {str(e)}")
             raise
 
-    def articles(self, limit: Optional[int] = None) -> List['Article']:
-        """Get author's articles with optional pagination"""
+    def articles(self) -> List['Article']:
+        """Get all articles written by this author"""
         from lib.models.article import Article
         try:
             with get_connection() as conn:
-                query = "SELECT * FROM articles WHERE author_id = ?" + (" LIMIT ?" if limit else "")
-                params = (self.id, limit) if limit else (self.id,)
-                rows = conn.execute(query, params).fetchall()
+                rows = conn.execute(
+                    "SELECT * FROM articles WHERE author_id = ? ORDER BY published_at DESC",
+                    (self.id,)
+                ).fetchall()
                 return [Article._row_to_article(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching articles for author {self.id}: {str(e)}")
             raise
 
     def magazines(self) -> List['Magazine']:
-        """Get distinct magazines author has written for"""
+        """Get all distinct magazines this author has contributed to"""
         from lib.models.magazine import Magazine
         try:
             with get_connection() as conn:

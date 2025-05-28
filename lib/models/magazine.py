@@ -116,7 +116,7 @@ class Magazine:
             raise
 
     def contributors(self) -> List['Author']:
-        """Get distinct authors who contributed to this magazine"""
+        """Get all authors who have written for this magazine"""
         from lib.models.author import Author
         try:
             with get_connection() as conn:
@@ -129,6 +129,41 @@ class Magazine:
                 return [Author._row_to_author(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching contributors for magazine {self.id}: {str(e)}")
+            raise
+
+    @classmethod
+    def find_popular_magazines(cls, min_authors: int = 2) -> List['Magazine']:
+        """Find magazines with articles by at least N different authors"""
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """SELECT m.* FROM magazines m
+                    JOIN (
+                        SELECT magazine_id, COUNT(DISTINCT author_id) as author_count
+                        FROM articles
+                        GROUP BY magazine_id
+                        HAVING author_count >= ?
+                    ) ac ON m.id = ac.magazine_id""",
+                    (min_authors,)
+                ).fetchall()
+                return [cls._row_to_magazine(row) for row in rows]
+        except Exception as e:
+            logger.error(f"Error finding popular magazines: {str(e)}")
+            raise
+
+    @classmethod
+    def with_article_counts(cls) -> Dict[int, int]:
+        """Count the number of articles in each magazine"""
+        try:
+            with get_connection() as conn:
+                rows = conn.execute(
+                    """SELECT magazine_id, COUNT(*) as article_count
+                    FROM articles
+                    GROUP BY magazine_id"""
+                ).fetchall()
+                return {row['magazine_id']: row['article_count'] for row in rows}
+        except Exception as e:
+            logger.error(f"Error counting articles per magazine: {str(e)}")
             raise
 
     @classmethod
