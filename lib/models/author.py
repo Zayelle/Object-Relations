@@ -37,21 +37,22 @@ class Author:
             should_close = True
 
         try:
+            cursor = conn.cursor()
             if self.id is None:
-                cursor = conn.execute(
-                    "INSERT INTO authors (name) VALUES (?) RETURNING id, created_at",
+                cursor.execute(
+                    "INSERT INTO authors (name) VALUES (?)",
                     (self.name,)
                 )
-                result = cursor.fetchone()
-                self.id = result['id']
-                self.created_at = result['created_at']
+                self.id = cursor.lastrowid  # Update the id after insert
                 logger.info(f"Created new author ID {self.id}")
             else:
-                conn.execute(
+                cursor.execute(
                     "UPDATE authors SET name = ? WHERE id = ?",
                     (self.name, self.id)
                 )
                 logger.info(f"Updated author ID {self.id}")
+            if should_close:
+                conn.commit()
             return True
         except Exception as e:
             logger.error(f"Failed to save author {self.id}: {str(e)}")
