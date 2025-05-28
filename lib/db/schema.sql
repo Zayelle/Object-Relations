@@ -25,7 +25,12 @@ CREATE TABLE IF NOT EXISTS articles (
     FOREIGN KEY (magazine_id) REFERENCES magazines(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_articles_author ON articles(author_id);
-CREATE INDEX IF NOT EXISTS idx_articles_magazine ON articles(magazine_id);
+CREATE INDEX IF NOT EXISTS idx_articles_magazine_id ON articles(magazine_id);
+CREATE INDEX IF NOT EXISTS idx_articles_author_id ON articles(author_id);
+CREATE INDEX IF NOT EXISTS idx_magazines_category ON magazines(category);
+CREATE INDEX IF NOT EXISTS idx_articles_published_at ON articles(published_at DESC);
+
+-- For top_publisher() optimization
+CREATE INDEX IF NOT EXISTS idx_article_counts ON articles(magazine_id, id);
 
 COMMIT;

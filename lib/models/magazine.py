@@ -3,6 +3,7 @@ from lib.db.connection import get_connection
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, TYPE_CHECKING
 import logging
+import sqlite3
 
 if TYPE_CHECKING:
     from lib.models.article import Article
@@ -224,4 +225,29 @@ class Magazine:
                 return [Author._row_to_author(row) for row in rows]
         except Exception as e:
             logger.error(f"Error fetching contributing authors for magazine {self.id}: {str(e)}")
+            raise
+
+    @classmethod
+    def top_publisher(cls) -> Optional['Magazine']:
+        """Returns the magazine with the most published articles."""
+        try:
+            with get_connection() as conn:
+                conn.row_factory = sqlite3.Row  # Ensure dict-like access
+                row = conn.execute(
+                    """
+                    SELECT m.*, COUNT(a.id) as article_count
+                    FROM magazines m
+                    LEFT JOIN articles a ON m.id = a.magazine_id
+                    GROUP BY m.id
+                    ORDER BY article_count DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if row and row['id']:
+                    magazine = cls._row_to_magazine(row)
+                    setattr(magazine, 'article_count', row['article_count'])
+                    return magazine
+                return None
+        except Exception as e:
+            logger.error(f"Error finding top publisher: {str(e)}")
             raise
