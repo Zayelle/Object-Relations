@@ -27,8 +27,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-#lib/
-lib64/
+#projectlib/
+projectlib64/
 parts/
 sdist/
 var/
